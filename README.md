@@ -126,8 +126,7 @@ IntelliJ lists it and the zip is named after it. Bump it on every change worth i
 - **0.2.2** — scroll to zoom removed, since it never behaved in the tool window. Git no
   longer runs on the UI thread or inside the read action, which is what made IntelliJ
   report the plugin as slow.
-- **0.2.1** — the wheel step followed the distance scrolled instead of counting events.
-  Superseded by 0.2.2, which removes the wheel handler.
+- **0.2.1** — wheel zoom, since removed in 0.2.2.
 - **0.2.0** — the analysis moved to the IDE index, so references come from `resolve()`
   instead of rules over the text. Java only. Changed files are read from the ref being
   mapped, so a pull request maps without checking out its branch.
