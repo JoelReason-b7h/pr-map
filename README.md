@@ -19,12 +19,13 @@ is still visible.
 
 ## Install
 
-Download or build `pr-map-<version>.zip`, then in IntelliJ:
+Build or download `pr-map-<version>.zip`, then in IntelliJ:
 
 **Settings → Plugins → the gear icon → Install Plugin from Disk…** → pick the zip →
 restart. A **PR Map** tool window appears on the right of every project window.
 
-Needs `git` and `python3` on the path. Both ship with macOS; nothing else is installed.
+Needs `git` on the path, and `gh` for pull request mode. IntelliJ supplies everything else,
+including the Java support the analysis depends on.
 
 ## Use
 
@@ -36,10 +37,15 @@ The toolbar has one selector with three sources:
 | base…head | any two refs you type |
 | pull request | a PR number, resolved through the `gh` CLI |
 
-Leave **no tests** ticked to keep test sources and test resources out. Press **Draw**.
+The base ref stays editable in the first two, so a branch can be compared against a release
+tag or another long-lived branch. Leave **no tests** ticked to keep test sources and test
+resources out. Press **Draw**.
 
-In the diagram: drag to pan, ctrl-scroll or the buttons to zoom, **Fit** to frame it.
-Clicking a box opens it —
+The line under the toolbar names the two refs the drawing compares, and nothing else.
+
+In the diagram: drag to pan, scroll to zoom, and the buttons or **Fit** to frame it. A
+second press in the same place drags the zoom, up to zoom in and down to zoom out, about
+the point pressed. Clicking a box opens it —
 
 - a **changed** type opens as a diff, with the file at the merge-base on the left and your
   working tree on the right;
@@ -66,13 +72,13 @@ Two rules keep a diagram of this size readable, and both are deliberate.
 Call edges are hidden, except where a call is the only edge a type has, so a unit test
 never floats free of the type it tests. Untouched types that merely name two changed types
 are also left out, because a dozen of them all pointing at the same two services buries the
-shape; they still tell you the blast radius, so the terminal report keeps them.
+shape; they still tell you the blast radius, so the written report keeps them.
 
 ## How the analysis works
 
-Every changed `.java` file maps to the type it declares. For each type the
-analysis records what it extends, what it implements, what it holds and what it otherwise
-names, taking the strongest relationship when two types relate twice.
+Every changed `.java` file maps to the type it declares. For each type the analysis records
+what it extends, what it implements, what it holds and what it otherwise names, taking the
+strongest relationship when two types relate twice.
 
 Three kinds of untouched type then earn a place:
 
@@ -87,18 +93,33 @@ for what is already joined. Without that rule a single status enum makes everyth
 connected and no bridge is ever found.
 
 A changed file that declares no type — a `.feature` file, a resource — is reported
-separately, linked to a changed type when it names that type or repeats a string literal
-the type declares, such as a job name.
+separately.
+
+### Where the facts come from
+
+References come from the IDE's own index. Each one is resolved with `resolve()`, so
+imports, wildcard imports, static imports, same-package names, nested types and generic
+bounds all resolve as the compiler sees them, rather than being imitated by rules over the
+text. Which types reference a changed one — the blast radius — comes from
+`ReferencesSearch` over the project.
+
+The change set itself comes from git, because the index knows the code and git knows the
+change. A changed file is read from the ref being mapped and parsed in memory, so a pull
+request maps without checking its branch out; those files resolve against the project
+index, and a name the index cannot resolve is matched against the change set, which is how
+a reference to a class the change set itself adds survives. A ref that is already the
+checkout reads from disk instead, so uncommitted edits count.
 
 ### Limits
 
-References come from the IDE's own `resolve()`, so imports, wildcard imports, static
-imports, same-package names, nested types and generic bounds all resolve as the compiler
-sees them. A reference reachable only through reflection or through configuration stays
-invisible, because nothing static can see it. Java only.
-
 A box is a type, so a click opens a type. Each relationship records the line where the
-reference occurs, which is what a jump to the call site would need.
+reference occurs, which is what a jump to the call site would need, but nothing uses it yet.
+
+A reference reachable only through reflection or through configuration stays invisible,
+because nothing static can see it.
+
+The first draw after opening a project waits for indexing, since the analysis runs in smart
+mode. Java only.
 
 ## Layout
 
@@ -106,21 +127,26 @@ reference occurs, which is what a jump to the call site would need.
 src/main/kotlin/dev/joelreason/prmap/
   PrMapToolWindowFactory.kt   registers the tool window
   PrMapPanel.kt               toolbar, the embedded browser, and opening a file or a diff
-  Analyser.kt                 runs the bundled analysis and bounds how long it may take
+  PsiAnalyser.kt              resolves the change set into the topology, through the index
+  Git.kt                      what changed, and between which two commits
   Topology.kt                 the model the analysis produces
   Diagram.kt                  the drawing rules, and the Mermaid text
   Page.kt                     the page: zoom, pan, and the click that reaches the plugin
   WrapLayout.kt               a toolbar that wraps instead of hiding its controls
-  Diagnose.kt                 runs the parsing and drawing outside the IDE
+  Diagnose.kt                 renders a topology file outside the IDE
 src/main/resources/prmap/
-  topology.py                 the analysis
   mermaid.min.js              vendored, so the diagram draws with no network
+tools/
+  topology.py                 the same analysis by reading text, for testing without an IDE
 ```
 
-`topology.py` is the analysis and the plugin carries it as a resource, copied to a
-temporary file on first use. It is a script rather than Kotlin because it reads the whole
-repository through one `git cat-file --batch`, and because the same script runs from a
-terminal against any repository.
+Mermaid is vendored rather than loaded from a CDN because a page built from a string has an
+opaque origin, which blocks a module import, and the diagram has to draw with no network.
+
+`tools/topology.py` answers the same question by reading the repository's text through one
+`git cat-file --batch`. It resolves less than the index does, which is why the plugin
+stopped using it, but it runs anywhere with no IDE, and it is how the drawing rules were
+worked out. It does not ship inside the plugin.
 
 ## Versions
 
@@ -144,17 +170,22 @@ Everything targets JVM 17 against platform 2024.1, which is the last line that r
 A plugin built against it still loads in a newer IDE — `plugin.xml` sets `since-build` and
 no upper bound. Gradle 8.10 refuses to run on Java 25, so point `JAVA_HOME` at a 17.
 
-Run the parsing and the drawing rules against a real change set without starting an IDE:
+To see what the drawing rules make of a real change set without starting an IDE:
 
 ```bash
-python3 src/main/resources/prmap/topology.py --base origin/main --head HEAD \
-  --no-tests --out /tmp/map.json --repo /path/to/repo
-./gradlew diagnose -Pmap=/tmp/map.json
+python3 tools/topology.py --base origin/main --head HEAD --no-tests \
+  --out /tmp/map.json --repo /path/to/repo
+./gradlew diagnose -Pmap=/tmp/map.json                             # counts and diagram text
+./gradlew diagnose -Pmap=/tmp/map.json -Ppage=/tmp/out/index.html  # the real page
 ```
+
+The page it writes is the same one the tool window loads, which is how the screenshot in
+this README was taken.
 
 ## Analysis options
 
-`topology.py --help` lists them all. The ones worth knowing:
+`tools/topology.py --help` lists them all. The plugin applies the same defaults, and only
+exposes **no tests** in its toolbar.
 
 - `--pr N` — resolve a pull request through `gh`, rather than two refs.
 - `--no-tests` — leave test sources and test resources out of the change set.
