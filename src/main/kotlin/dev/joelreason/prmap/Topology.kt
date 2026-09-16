@@ -11,6 +11,8 @@ data class MapMeta(
   val head: String? = null,
   /** The commit the change set diverged from, which is what a file diffs against. */
   @SerializedName("merge_base") val mergeBase: String? = null,
+  /** The head branch of a pull request, which reads better than its sha. */
+  val branch: String? = null,
 )
 
 data class MapNode(

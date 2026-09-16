@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "dev.joelreason"
-version = "0.1.0"
+version = "0.2.0"
 
 repositories {
   mavenCentral()
@@ -15,6 +15,8 @@ repositories {
 dependencies {
   intellijPlatform {
     intellijIdeaCommunity("2024.1")
+    // Java PSI — PsiClass, resolve(), ReferencesSearch — ships in the bundled Java plugin.
+    bundledPlugin("com.intellij.java")
     // Git4Idea is not used: the plugin shells out to git in the project root, so
     // it loads in any IDE that has a terminal, including Ultimate.
     instrumentationTools()

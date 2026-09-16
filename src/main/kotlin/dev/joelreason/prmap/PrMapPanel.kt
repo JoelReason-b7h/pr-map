@@ -107,22 +107,13 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     headLabel.isVisible = refs; headField.isVisible = refs
     prLabel.isVisible = pr; prField.isVisible = pr
     if (mode == Source.CURRENT_BRANCH) {
-      status.text = "  " + (checkedOutBranch()?.let { "$it → ${baseField.text}" } ?: "no branch")
+      status.text = "  ${baseField.text} … " + (checkedOutBranch() ?: "HEAD")
     }
     revalidate(); repaint()
   }
 
-  private fun checkedOutBranch(): String? {
-    val root = repoRoot() ?: return null
-    return try {
-      val process = ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD")
-        .directory(root).redirectErrorStream(true).start()
-      val text = process.inputStream.bufferedReader().readText().trim()
-      if (process.waitFor() == 0 && text.isNotBlank() && text != "HEAD") text else null
-    } catch (_: Exception) {
-      null
-    }
-  }
+  private fun checkedOutBranch(): String? =
+    repoRoot()?.let { runCatching { Git(it).currentBranch() }.getOrNull() }
 
   /** Gives the page the function it calls when a box is clicked. */
   private fun installJump(view: JBCefBrowser) {
@@ -154,15 +145,11 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
   private fun open(target: Target) {
     val root = repoRoot() ?: return
     val file = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(File(root, target.path))
-    if (file == null) {
-      status.text = "  no such file: ${target.path}"
-      return
-    }
+    if (file == null) return
     // A type the change set does not touch has nothing to compare, so it opens as a file.
     val base = mergeBase
     if (!target.changed || base == null) {
       OpenFileDescriptor(project, file, (target.line - 1).coerceAtLeast(0), 0).navigate(true)
-      status.text = "  ${target.path}:${target.line}"
       return
     }
     showDiff(target, file, base)
@@ -180,15 +167,15 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     DiffManager.getInstance().showDiff(
       project, SimpleDiffRequest(target.path, left, right, leftTitle, "working tree")
     )
-    status.text = "  ${target.path} · ${base.take(8)}"
   }
 
+  /** null when the file did not exist at that commit, which is how an addition reads. */
   private fun gitShow(root: File, ref: String, path: String): String? = try {
     val process = ProcessBuilder("git", "show", "$ref:$path").directory(root).start()
     val text = process.inputStream.bufferedReader().readText()
     if (process.waitFor(20, TimeUnit.SECONDS) && process.exitValue() == 0) text else null
   } catch (_: Exception) {
-    null                              // the file did not exist at that commit
+    null
   }
 
   private fun repoRoot(): File? = project.basePath?.let(::File)
@@ -211,7 +198,7 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
       override fun run(indicator: ProgressIndicator) {
         indicator.isIndeterminate = true
         try {
-          result = Analyser.run(root, base, head, pr.ifBlank { null }, noTests)
+          result = PsiAnalyser(project, root).run(base, head, pr.ifBlank { null }, noTests, indicator)
         } catch (error: Exception) {
           failure = error.message ?: error.toString()
         }
@@ -225,13 +212,15 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
           return
         }
         mergeBase = topology.meta.mergeBase
-        val changed = topology.nodes.count { it.changed }
-        val where = when (mode) {
-          Source.CURRENT_BRANCH -> "${branch ?: "HEAD"} → $base"
-          Source.REFS -> "$base…$head"
-          Source.PR -> "PR $pr"
+        // Only the two refs the drawing compares. The counts are on screen, and a file
+        // that opened is in the editor, so neither needs saying again. A branch name is
+        // used wherever one is known, because a sha reads as nothing.
+        val headName = when (mode) {
+          Source.CURRENT_BRANCH -> branch ?: "HEAD"
+          Source.REFS -> head
+          Source.PR -> topology.meta.branch ?: "PR $pr"
         }
-        status.text = "  $changed changed · ${topology.nodes.size - changed} linked · $where"
+        status.text = "  $base … $headName"
         val page = Page.write(topology, dropUses = true, withCallers = false,
                               dark = !JBColor.isBright())
         view.loadURL(page.toURI().toString())

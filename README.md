@@ -70,7 +70,7 @@ shape; they still tell you the blast radius, so the terminal report keeps them.
 
 ## How the analysis works
 
-Every changed `.java` or `.kt` file maps to the type it declares. For each type the
+Every changed `.java` file maps to the type it declares. For each type the
 analysis records what it extends, what it implements, what it holds and what it otherwise
 names, taking the strongest relationship when two types relate twice.
 
@@ -92,11 +92,13 @@ the type declares, such as a job name.
 
 ### Limits
 
-The analysis resolves **types, not calls**: it reports that one type names another, never
-which method, so a click lands on the type declaration rather than on a method. It reads
-imports and same-package names, so a wildcard import resolves to nothing, and a reference
-reachable only through reflection or through configuration is invisible. Java and Kotlin
-only.
+References come from the IDE's own `resolve()`, so imports, wildcard imports, static
+imports, same-package names, nested types and generic bounds all resolve as the compiler
+sees them. A reference reachable only through reflection or through configuration stays
+invisible, because nothing static can see it. Java only.
+
+A box is a type, so a click opens a type. Each relationship records the line where the
+reference occurs, which is what a jump to the call site would need.
 
 ## Layout
 
@@ -119,6 +121,17 @@ src/main/resources/prmap/
 temporary file on first use. It is a script rather than Kotlin because it reads the whole
 repository through one `git cat-file --batch`, and because the same script runs from a
 terminal against any repository.
+
+## Versions
+
+The version in `build.gradle.kts` is the only thing that tells one installed build from
+another, because IntelliJ lists it and the zip is named after it. Bump it on every change
+worth installing.
+
+- **0.2.0** — the analysis moved to IntelliJ's own resolved index, so references come from
+  `resolve()` rather than from rules over the text. Java only. A changed file is read from
+  the ref being mapped, so a pull request still maps without checking its branch out.
+- **0.1.0** — first version, with the analysis in a bundled Python script.
 
 ## Build
 

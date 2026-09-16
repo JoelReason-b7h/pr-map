@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a dependency topology for the types a change set touches.
+"""Build a dependency topology for the Java types a change set touches.
 
 Reads a git repository and a change set (a pull request, or an explicit base and
 head), works out which types each changed file declares, and resolves how those
@@ -45,7 +45,7 @@ ANNOTATION_RE = re.compile(r"@([A-Z]\w*)")
 KIND_RANK = {"extends": 0, "implements": 1, "injects": 2, "uses": 3}
 
 SOURCE_ROOTS = ("/src/main/java/", "/src/test/java/", "/src/integrationTest/java/",
-                "/src/testFixtures/java/", "/src/main/kotlin/", "/src/test/kotlin/")
+                "/src/testFixtures/java/")
 TEST_ROOTS = ("/src/test/", "/src/integrationTest/", "/src/testFixtures/",
               "/src/acceptanceTest/", "/tools/test-e2e/")
 
@@ -173,7 +173,7 @@ class Index:
         self._refs = {}             # fqn -> {target fqn: kind}
 
     def build(self, paths):
-        paths = [path for path in paths if path.endswith((".java", ".kt"))]
+        paths = [path for path in paths if path.endswith(".java")]
         for path, raw in read_blobs(self.repo, self.ref, paths).items():
             text = strip_noise(raw)
             self.text[path] = text
@@ -626,7 +626,7 @@ def main():
     changed_paths = {entry["path"]: entry for entry in files}
     roots, unlinked = {}, []
     for path, entry in changed_paths.items():
-        fqn = index.fqn_for_path(path) if path.endswith((".java", ".kt")) else None
+        fqn = index.fqn_for_path(path) if path.endswith(".java") else None
         if fqn and fqn in index.by_fqn:
             roots[fqn] = entry
         else:
