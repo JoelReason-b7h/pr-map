@@ -35,6 +35,8 @@ import java.util.concurrent.TimeUnit
 import javax.swing.JButton
 import javax.swing.JComboBox
 import javax.swing.JPanel
+import javax.swing.event.DocumentEvent
+import javax.swing.event.DocumentListener
 
 class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
 
@@ -79,6 +81,13 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     val bar = JPanel(WrapLayout())
     bar.border = JBUI.Borders.empty(2, 4)
     source.addActionListener { onSourceChanged() }
+    // Editing the base must refresh the line that names it, or that line goes stale and
+    // claims a base the next Draw will not use.
+    baseField.document.addDocumentListener(object : DocumentListener {
+      override fun insertUpdate(event: DocumentEvent) = onSourceChanged()
+      override fun removeUpdate(event: DocumentEvent) = onSourceChanged()
+      override fun changedUpdate(event: DocumentEvent) = onSourceChanged()
+    })
     bar.add(source)
     bar.add(baseLabel); bar.add(baseField)
     bar.add(headLabel); bar.add(headField)
@@ -94,7 +103,10 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     val mode = source.selectedItem as Source
     val refs = mode == Source.REFS
     val pr = mode == Source.PR
-    baseLabel.isVisible = refs; baseField.isVisible = refs
+    // The base stays editable while mapping the current branch, because which base the
+    // branch is compared against is the one thing worth changing there. Only the head is
+    // fixed, since that mode means HEAD.
+    baseLabel.isVisible = !pr; baseField.isVisible = !pr
     headLabel.isVisible = refs; headField.isVisible = refs
     prLabel.isVisible = pr; prField.isVisible = pr
     if (mode == Source.CURRENT_BRANCH) {

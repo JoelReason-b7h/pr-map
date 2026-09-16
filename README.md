@@ -32,7 +32,7 @@ The toolbar has one selector with three sources:
 
 | source | what it maps |
 | --- | --- |
-| current branch | `HEAD` against a base ref, which defaults to `origin/main` |
+| current branch | `HEAD` against the base ref beside it, which starts at `origin/main` |
 | base…head | any two refs you type |
 | pull request | a PR number, resolved through the `gh` CLI |
 
