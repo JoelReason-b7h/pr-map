@@ -72,7 +72,8 @@ Two rules keep a diagram of this size readable, and both are deliberate.
 Call edges are hidden, except where a call is the only edge a type has, so a unit test
 never floats free of the type it tests. Untouched types that merely name two changed types
 are also left out, because a dozen of them all pointing at the same two services buries the
-shape; they still tell you the blast radius, so the written report keeps them.
+shape. The analysis still finds them, and `Diagram.build` draws them when `withCallers` is
+set, but nothing in the tool window sets it — so today they are computed and not shown.
 
 ## How the analysis works
 
