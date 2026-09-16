@@ -60,9 +60,44 @@ class Git(private val repo: File) {
       }.toList()
   }
 
-  /** The blob at a ref, or null when the file did not exist there. */
-  fun show(ref: String, path: String): String? =
-    run("git", "show", "$ref:$path").takeIf { it.isNotBlank() }
+  /**
+   * Every named blob at a ref, in one pass.
+   *
+   * One `git cat-file --batch` rather than a `git show` for each path, because these are
+   * read before the analysis takes a read action and a subprocess per file would hold it.
+   */
+  fun showAll(ref: String, paths: List<String>): Map<String, String> {
+    if (paths.isEmpty()) return emptyMap()
+    val process = ProcessBuilder("git", "cat-file", "--batch").directory(repo)
+      .redirectErrorStream(false).start()
+    process.outputStream.bufferedWriter().use { writer ->
+      paths.forEach { writer.write("$ref:$it\n") }
+    }
+    val out = process.inputStream.readBytes()
+    if (!process.waitFor(120, TimeUnit.SECONDS)) {
+      process.destroyForcibly()
+      throw Failed("git cat-file did not finish within 120s")
+    }
+
+    val contents = LinkedHashMap<String, String>()
+    var offset = 0
+    for (path in paths) {
+      val end = out.indexOfFirst(offset, '\n'.code.toByte())
+      if (end < 0) break
+      val header = String(out, offset, end - offset).split(" ")
+      offset = end + 1
+      if (header.size < 3) continue                 // "<object> missing"
+      val size = header[2].toIntOrNull() ?: continue
+      contents[path] = String(out, offset, size)
+      offset += size + 1
+    }
+    return contents
+  }
+
+  private fun ByteArray.indexOfFirst(from: Int, value: Byte): Int {
+    for (index in from until size) if (this[index] == value) return index
+    return -1
+  }
 
   /** Whether this ref is what the working tree currently holds. */
   fun isCheckedOut(ref: String): Boolean {

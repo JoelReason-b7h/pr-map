@@ -31,9 +31,8 @@ Pick a source, then press **Draw**.
 The base ref is editable in the first two. **no tests** leaves test sources and test
 resources out. The line under the toolbar shows the two refs being compared.
 
-Drag to pan. Scroll to zoom. Use the buttons or **Fit** to frame the diagram. Press twice
-in the same place and drag to zoom: up zooms in, down zooms out, anchored where you
-pressed.
+Drag to pan. Use the buttons or **Fit** to frame the diagram. Press twice in the same
+place and drag to zoom: up zooms in, down zooms out, anchored where you pressed.
 
 Click a changed type for a diff, with the merge-base on the left and your working tree on
 the right. Click an untouched type to open the file. The diff's right side is the working
@@ -124,8 +123,11 @@ an IDE, which is how the drawing rules were worked out, and it does not ship in 
 The version in `build.gradle.kts` is what tells one installed build from another, since
 IntelliJ lists it and the zip is named after it. Bump it on every change worth installing.
 
-- **0.2.1** — the wheel step follows the distance scrolled instead of counting events, so a
-  trackpad no longer runs away.
+- **0.2.2** — scroll to zoom removed, since it never behaved in the tool window. Git no
+  longer runs on the UI thread or inside the read action, which is what made IntelliJ
+  report the plugin as slow.
+- **0.2.1** — the wheel step followed the distance scrolled instead of counting events.
+  Superseded by 0.2.2, which removes the wheel handler.
 - **0.2.0** — the analysis moved to the IDE index, so references come from `resolve()`
   instead of rules over the text. Java only. Changed files are read from the ref being
   mapped, so a pull request maps without checking out its branch.

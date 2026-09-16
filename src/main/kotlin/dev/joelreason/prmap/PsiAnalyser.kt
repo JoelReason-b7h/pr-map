@@ -1,7 +1,7 @@
 package dev.joelreason.prmap
 
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.progress.ProgressIndicator
-import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiClass
@@ -46,6 +46,7 @@ class PsiAnalyser(private val project: Project, private val repo: File) {
   private var declaredHere: Map<String, String> = emptyMap()
   private var readFrom: String = "HEAD"
   private var refIsCheckout = true
+  private var sources: Map<String, String> = emptyMap()   // path -> text at the ref
   private val parsed = HashMap<String, PsiClass?>()      // path -> class, parsed once
 
   fun run(
@@ -62,10 +63,20 @@ class PsiAnalyser(private val project: Project, private val repo: File) {
 
     readFrom = meta.head.orEmpty()
     refIsCheckout = git.isCheckedOut(readFrom)
-    indicator.text = "Resolving references"
-    return DumbService.getInstance(project).runReadActionInSmartMode<Topology> {
-      build(meta, files)
+    // Every git read happens here, before the read action starts. A subprocess inside a
+    // read action holds it open, and a long read action blocks typing.
+    if (!refIsCheckout) {
+      indicator.text = "Reading ${files.size} files at the ref"
+      sources = git.showAll(readFrom, files.map { it.path }.filter { it.endsWith(".java") })
     }
+
+    indicator.text = "Resolving references"
+    // nonBlocking yields to write actions and restarts, so the IDE stays responsive while
+    // a large change set resolves.
+    return ReadAction.nonBlocking<Topology> { build(meta, files) }
+      .inSmartMode(project)
+      .expireWith(project)
+      .executeSynchronously()
   }
 
   // ------------------------------------------------------------------ building
@@ -209,7 +220,7 @@ class PsiAnalyser(private val project: Project, private val repo: File) {
       val psiFile = PsiManager.getInstance(project).findFile(onDisk) as? PsiJavaFile
       psiFile?.classes?.firstOrNull()?.let { return@getOrPut it }
     }
-    val text = Git(repo).show(readFrom, path) ?: return@getOrPut null
+    val text = sources[path] ?: return@getOrPut null
     val file = PsiFileFactory.getInstance(project)
       .createFileFromText(path.substringAfterLast('/'), JavaFileType.INSTANCE, text)
     (file as? PsiJavaFile)?.classes?.firstOrNull()

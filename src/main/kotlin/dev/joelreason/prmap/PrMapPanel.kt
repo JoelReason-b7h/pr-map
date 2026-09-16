@@ -54,6 +54,9 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
   private val browser: JBCefBrowser? = if (JBCefApp.isSupported()) JBCefBrowser() else null
   /** The commit the drawn change set diverged from; a click diffs against it. */
   private var mergeBase: String? = null
+  /** Read off the UI thread and kept, because asking git costs a subprocess and the
+   *  toolbar asks on every keystroke in the base field. */
+  @Volatile private var branchName: String? = null
 
   init {
     add(toolbar(), BorderLayout.NORTH)
@@ -70,6 +73,7 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     }
     add(status, BorderLayout.SOUTH)
     onSourceChanged()
+    refreshBranchName()
   }
 
   private fun toolbar(): JPanel {
@@ -107,13 +111,21 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     headLabel.isVisible = refs; headField.isVisible = refs
     prLabel.isVisible = pr; prField.isVisible = pr
     if (mode == Source.CURRENT_BRANCH) {
-      status.text = "  ${baseField.text} … " + (checkedOutBranch() ?: "HEAD")
+      status.text = "  ${baseField.text} … " + (branchName ?: "HEAD")
     }
     revalidate(); repaint()
   }
 
-  private fun checkedOutBranch(): String? =
-    repoRoot()?.let { runCatching { Git(it).currentBranch() }.getOrNull() }
+  private fun refreshBranchName() {
+    val root = repoRoot() ?: return
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val name = runCatching { Git(root).currentBranch() }.getOrNull()
+      ApplicationManager.getApplication().invokeLater {
+        branchName = name
+        onSourceChanged()
+      }
+    }
+  }
 
   /** Gives the page the function it calls when a box is clicked. */
   private fun installJump(view: JBCefBrowser) {
@@ -188,8 +200,8 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     val head = if (mode == Source.REFS) headField.text.trim().ifBlank { "HEAD" } else "HEAD"
     val pr = if (mode == Source.PR) prField.text.trim() else ""
     val noTests = excludeTests.isSelected
-    val branch = checkedOutBranch()
-    status.text = "  reading the repository…"
+    val branch = branchName
+    status.text = "  reading…"
 
     object : Task.Backgroundable(project, "Building the PR map", true) {
       private var result: Topology? = null
