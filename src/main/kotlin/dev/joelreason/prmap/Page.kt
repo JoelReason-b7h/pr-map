@@ -151,11 +151,20 @@ object Page {
   document.getElementById("z-fit").onclick = fit;
 
   // The viewport never scrolls, so a plain wheel zooms rather than doing nothing.
+  //
+  // The step follows the distance scrolled, not the number of events. A mouse notch
+  // arrives as one event of about 100, while a trackpad sends a stream of small ones, so
+  // a fixed step per event would crawl under the mouse and bolt under the trackpad.
+  // deltaMode says what the number counts: pixels, lines or pages.
   vp.addEventListener("wheel", function (e) {
     e.preventDefault();
+    var delta = e.deltaY;
+    if (e.deltaMode === 1) delta *= 16;          // lines
+    else if (e.deltaMode === 2) delta *= 400;    // pages
+    var factor = Math.exp(-delta * 0.0025);
+    factor = Math.max(1/2, Math.min(2, factor)); // one event never jumps further than this
     var r = vp.getBoundingClientRect();
-    var step = e.ctrlKey || e.metaKey ? 1.15 : 1.08;   // a pinch moves further per notch
-    zoomAt(e.clientX-r.left, e.clientY-r.top, e.deltaY < 0 ? step : 1/step);
+    zoomAt(e.clientX-r.left, e.clientY-r.top, factor);
   }, { passive:false });
 
   // Panning must not capture the pointer on the way down. While a pointer is captured

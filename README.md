@@ -69,11 +69,16 @@ what GitHub shows for a pull request.
 
 Two rules keep a diagram of this size readable, and both are deliberate.
 
-Call edges are hidden, except where a call is the only edge a type has, so a unit test
-never floats free of the type it tests. Untouched types that merely name two changed types
-are also left out, because a dozen of them all pointing at the same two services buries the
-shape. The analysis still finds them, and `Diagram.build` draws them when `withCallers` is
-set, but nothing in the tool window sets it — so today they are computed and not shown.
+`calls` edges are hidden, because a class names many types it merely uses and drawing all
+of them buries the inheritance and the injection. One is put back when it is the only edge
+either of its two types has, since that type would otherwise be drawn with no line to
+anything — which is what would happen to a unit test, whose only link to the class it tests
+is a call.
+
+Untouched types that merely name two changed types are also left out, because a dozen of
+them all pointing at the same two services buries the shape. The analysis still finds them,
+and `Diagram.build` draws them when `withCallers` is set, but nothing in the tool window
+sets it — so today they are computed and not shown.
 
 ## How the analysis works
 
@@ -155,6 +160,8 @@ The version in `build.gradle.kts` is the only thing that tells one installed bui
 another, because IntelliJ lists it and the zip is named after it. Bump it on every change
 worth installing.
 
+- **0.2.1** — the wheel step follows the distance scrolled rather than counting events,
+  so a trackpad no longer bolts.
 - **0.2.0** — the analysis moved to IntelliJ's own resolved index, so references come from
   `resolve()` rather than from rules over the text. Java only. A changed file is read from
   the ref being mapped, so a pull request still maps without checking its branch out.
