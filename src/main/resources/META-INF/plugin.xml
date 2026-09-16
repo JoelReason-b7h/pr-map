@@ -1,0 +1,17 @@
+<idea-plugin>
+  <id>dev.joelreason.prmap</id>
+  <name>PR Map</name>
+  <vendor email="joel.reason@bondsmith.co.uk">Joel Reason</vendor>
+
+  <description><![CDATA[
+    Draws the types a change set touches and how they reach one another, including the
+    paths that run through types the change does not touch. Click a box to open that
+    type in the editor.
+  ]]></description>
+
+  <depends>com.intellij.modules.platform</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <toolWindow id="PR Map" anchor="right" factoryClass="dev.joelreason.prmap.PrMapToolWindowFactory"/>
+  </extensions>
+</idea-plugin>
