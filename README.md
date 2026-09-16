@@ -34,6 +34,12 @@ resources out. The line under the toolbar shows the two refs being compared.
 Drag to pan. Use the buttons or **Fit** to frame the diagram. Press twice in the same
 place and drag to zoom: up zooms in, down zooms out, anchored where you pressed.
 
+Hover a box to pick out the arrows pointing at it, with everything else faded.
+
+Each box has a tick in its top-left corner. Ticking one dims the box and every arrow
+pointing at it, which is how you mark a type as reviewed and stop it drawing your eye.
+Ticks last until the next **Draw**.
+
 Click a changed type for a diff, with the merge-base on the left and your working tree on
 the right. Click an untouched type to open the file. The diff's right side is the working
 tree, so uncommitted edits appear in it.
@@ -123,6 +129,8 @@ an IDE, which is how the drawing rules were worked out, and it does not ship in 
 The version in `build.gradle.kts` is what tells one installed build from another, since
 IntelliJ lists it and the zip is named after it. Bump it on every change worth installing.
 
+- **0.3.0** — hovering a box picks out the arrows pointing at it, and each box has a tick
+  that dims the box and its incoming arrows.
 - **0.2.2** — scroll to zoom removed, since it never behaved in the tool window. Git no
   longer runs on the UI thread or inside the read action, which is what made IntelliJ
   report the plugin as slow.

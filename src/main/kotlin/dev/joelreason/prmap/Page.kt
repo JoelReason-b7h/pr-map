@@ -91,6 +91,21 @@ object Page {
   #zoom button:hover { border-color:var(--accent); }
   #zoom span { color:var(--muted); font-size:11px; min-width:36px; text-align:center; }
   g.node { cursor:pointer; }
+
+  /* Mermaid tags each arrow with LS-<source> and LE-<target>, which is what lets an
+     arrow be found from the box it points at. */
+  .flowchart-link { transition:opacity 120ms, stroke-width 120ms; }
+  svg.focus .flowchart-link, svg.focus .edgeLabel { opacity:0.12; }
+  svg.focus .flowchart-link.hot { opacity:1; stroke-width:2.5px; }
+  .flowchart-link.done { opacity:0.1; }
+  svg.focus .flowchart-link.done.hot { opacity:0.45; stroke-width:1.5px; }
+  g.node.ticked { opacity:0.45; }
+  g.tick { cursor:pointer; }
+  g.tick rect { fill:var(--ground); stroke:var(--muted); stroke-width:1; }
+  g.tick:hover rect { stroke:var(--accent); }
+  g.tick .mark { display:none; fill:none; stroke:var(--accent); stroke-width:2;
+                 stroke-linecap:round; stroke-linejoin:round; }
+  g.node.ticked g.tick .mark { display:block; }
 </style></head>
 <body>
 <div id="viewport">
@@ -229,9 +244,47 @@ object Page {
       return;
     }
     svg.style.maxWidth = "none";
+
+    function arrowsInto(id) { return svg.querySelectorAll("path.LE-" + id); }
+    function mark(id, name, on) {
+      arrowsInto(id).forEach(function (path) { path.classList.toggle(name, on); });
+    }
+
+    var SVG_NS = "http://www.w3.org/2000/svg";
+    function addTick(g, id) {
+      var box = g.getBBox();
+      var tick = document.createElementNS(SVG_NS, "g");
+      tick.setAttribute("class", "tick");
+      tick.setAttribute("transform", "translate(" + (box.x + 5) + "," + (box.y + 5) + ")");
+      var rect = document.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("width", "13"); rect.setAttribute("height", "13");
+      rect.setAttribute("rx", "3");
+      var mark2 = document.createElementNS(SVG_NS, "path");
+      mark2.setAttribute("class", "mark");
+      mark2.setAttribute("d", "M3 6.8 L5.6 9.4 L10 4");
+      tick.appendChild(rect); tick.appendChild(mark2);
+      tick.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+      tick.addEventListener("click", function (e) {
+        e.stopPropagation();                       // a tick is not a request to open the file
+        var done = g.classList.toggle("ticked");
+        mark(id, "done", done);
+      });
+      g.appendChild(tick);
+    }
+
     var nodes = svg.querySelectorAll("g.node");
     nodes.forEach(function (g) {
       var id = nodeId(g);
+      addTick(g, id);
+
+      // Hovering a box picks out what points at it, and fades everything else.
+      g.addEventListener("mouseenter", function () {
+        svg.classList.add("focus"); mark(id, "hot", true);
+      });
+      g.addEventListener("mouseleave", function () {
+        svg.classList.remove("focus"); mark(id, "hot", false);
+      });
+
       g.addEventListener("click", function (e) {
         if (moved) return;                       // a drag that ended on a box is not a click
         e.stopPropagation();
