@@ -220,12 +220,20 @@ class Index:
         pkg = package_of(path, text)
         simple = os.path.basename(path).rsplit(".", 1)[0]
 
-        # simple name -> fqn, from explicit imports first, then the same package
+        # simple name -> fqn. An explicit import wins, then a package imported whole,
+        # then the type's own package, which is the order the language resolves in.
         visible = {}
+        wildcards = []
         for imported in IMPORT_RE.findall(text):
+            if imported.endswith(".*"):
+                wildcards.append(imported[:-2])
+                continue
             target = self.resolve_import(imported)
             if target:
                 visible[target.rsplit(".", 1)[1]] = target
+        for package in wildcards:
+            for other_simple, other_fqn in self.by_package.get(package, {}).items():
+                visible.setdefault(other_simple, other_fqn)
         for other_simple, other_fqn in self.by_package.get(pkg, {}).items():
             visible.setdefault(other_simple, other_fqn)
 

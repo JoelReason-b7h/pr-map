@@ -3,8 +3,6 @@ package dev.joelreason.prmap
 import java.awt.Container
 import java.awt.Dimension
 import java.awt.FlowLayout
-import javax.swing.JScrollPane
-import javax.swing.SwingUtilities
 
 /**
  * A FlowLayout that reports the height it actually needs once its rows have wrapped.
@@ -53,10 +51,6 @@ class WrapLayout(align: Int = LEFT, hgap: Int = 6, vgap: Int = 4) : FlowLayout(a
       dimension.width += insets.left + insets.right + hgap * 2
       dimension.height += insets.top + insets.bottom + vgap * 2
 
-      // Inside a scroll pane the container reports its full width while laying out, which
-      // would collapse the wrap back to one row.
-      val scroller = SwingUtilities.getAncestorOfClass(JScrollPane::class.java, target)
-      if (scroller != null && target.isValid) dimension.width -= hgap + 2
       return dimension
     }
   }

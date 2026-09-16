@@ -26,11 +26,8 @@ import com.intellij.util.ui.JBUI
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.handler.CefLoadHandlerAdapter
-import org.cef.handler.CefRequestHandlerAdapter
-import org.cef.network.CefRequest
 import java.awt.BorderLayout
 import java.io.File
-import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 import javax.swing.JButton
 import javax.swing.JComboBox
@@ -110,8 +107,7 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     headLabel.isVisible = refs; headField.isVisible = refs
     prLabel.isVisible = pr; prField.isVisible = pr
     if (mode == Source.CURRENT_BRANCH) {
-      status.text = "  " + (checkedOutBranch()?.let { "on $it, against ${baseField.text}" }
-        ?: "no branch found")
+      status.text = "  " + (checkedOutBranch()?.let { "$it → ${baseField.text}" } ?: "no branch")
     }
     revalidate(); repaint()
   }
@@ -128,11 +124,7 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     }
   }
 
-  /**
-   * Two ways for the page to reach the plugin. `window.openInIde` is the supported one;
-   * a `prmap://` navigation is the fallback, because the injected function is silently
-   * absent if the query fails to install and a click would then do nothing at all.
-   */
+  /** Gives the page the function it calls when a box is clicked. */
   private fun installJump(view: JBCefBrowser) {
     val query = JBCefJSQuery.create(view as JBCefBrowserBase)
     Disposer.register(this, query)
@@ -144,19 +136,6 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
           "window.openInIde = function(payload) { ${query.inject("payload")} };",
           cefBrowser.url, 0
         )
-      }
-    }, view.cefBrowser)
-
-    view.jbCefClient.addRequestHandler(object : CefRequestHandlerAdapter() {
-      override fun onBeforeBrowse(
-        cefBrowser: CefBrowser?, frame: CefFrame?, request: CefRequest?,
-        userGesture: Boolean, isRedirect: Boolean,
-      ): Boolean {
-        val url = request?.url ?: return false
-        if (!url.startsWith("prmap://")) return false
-        val payload = url.substringAfter("payload=", "")
-        if (payload.isNotBlank()) receive(URLDecoder.decode(payload, "UTF-8"))
-        return true                     // handled here, so the browser does not navigate
       }
     }, view.cefBrowser)
   }
@@ -183,7 +162,7 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     val base = mergeBase
     if (!target.changed || base == null) {
       OpenFileDescriptor(project, file, (target.line - 1).coerceAtLeast(0), 0).navigate(true)
-      status.text = "  opened ${target.path}:${target.line}"
+      status.text = "  ${target.path}:${target.line}"
       return
     }
     showDiff(target, file, base)
@@ -201,7 +180,7 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     DiffManager.getInstance().showDiff(
       project, SimpleDiffRequest(target.path, left, right, leftTitle, "working tree")
     )
-    status.text = "  diffed ${target.path} against ${base.take(10)}"
+    status.text = "  ${target.path} · ${base.take(8)}"
   }
 
   private fun gitShow(root: File, ref: String, path: String): String? = try {
@@ -248,12 +227,11 @@ class PrMapPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
         mergeBase = topology.meta.mergeBase
         val changed = topology.nodes.count { it.changed }
         val where = when (mode) {
-          Source.CURRENT_BRANCH -> "${branch ?: "HEAD"} against $base"
+          Source.CURRENT_BRANCH -> "${branch ?: "HEAD"} → $base"
           Source.REFS -> "$base…$head"
           Source.PR -> "PR $pr"
         }
-        status.text = "  $where · $changed changed types · " +
-          "${topology.nodes.size - changed} untouched on the paths between them"
+        status.text = "  $changed changed · ${topology.nodes.size - changed} linked · $where"
         val page = Page.write(topology, dropUses = true, withCallers = false,
                               dark = !JBColor.isBright())
         view.loadURL(page.toURI().toString())

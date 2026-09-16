@@ -38,14 +38,9 @@ object Page {
     val key = Diagram.keys(topology.nodes)
     val detail = topology.nodes.associate { node ->
       key.getValue(node.id) to mapOf(
-        "name" to node.name,
-        "role" to node.role,
         "path" to node.path,
         "line" to node.line,
         "changed" to node.changed,
-        "status" to node.status,
-        "churn" to "+${node.additions} / −${node.deletions}",
-        "links" to links(topology, node.id),
       )
     }
 
@@ -57,19 +52,6 @@ object Page {
       .replace("__MUTED__", if (dark) "#9BAAA3" else "#53645C")
       .replace("__DIAGRAM__", escape(diagram))
       .replace("__DETAIL__", Gson().toJson(detail))
-  }
-
-  private fun links(topology: Topology, id: String): List<String> {
-    val name = topology.nodes.associate { it.id to it.name }
-    val verb = mapOf("extends" to "extends", "implements" to "implements",
-                     "injects" to "holds", "uses" to "calls")
-    val out = mutableListOf<String>()
-    topology.edges.forEach { edge ->
-      val label = verb[edge.kind] ?: edge.kind
-      if (edge.from == id) out += "$label → ${name[edge.to]}"
-      if (edge.to == id) out += "${name[edge.from]} $label this"
-    }
-    return out.distinct().sorted()
   }
 
   private fun escape(text: String) = text
@@ -87,7 +69,19 @@ object Page {
          font:13px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; }
   #viewport { flex:1; overflow:hidden; position:relative; cursor:grab; }
   #viewport.drag { cursor:grabbing; }
-  #stage { transform-origin:0 0; padding:16px; }
+  /* The diagram source sits in the page as text until mermaid replaces it, and the
+     bundled script takes a moment to parse, so the stage stays hidden until an svg
+     exists. Opacity rather than display, because mermaid measures the text to lay the
+     boxes out and a hidden element has no size. */
+  #stage { transform-origin:0 0; padding:16px; opacity:0; }
+  #stage.ready { opacity:1; }
+  #loading { position:absolute; inset:0; display:flex; align-items:center;
+             justify-content:center; color:var(--muted); font-size:12px; }
+  #loading.gone { display:none; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #loading i { width:12px; height:12px; margin-right:8px; border-radius:50%;
+               border:2px solid var(--line); border-top-color:var(--accent);
+               animation:spin 700ms linear infinite; }
   #zoom { position:absolute; left:8px; top:8px; display:flex; gap:4px; align-items:center;
           background:var(--surface); border:1px solid var(--line); border-radius:6px;
           padding:3px 5px; z-index:5; }
@@ -97,7 +91,6 @@ object Page {
   #zoom button:hover { border-color:var(--accent); }
   #zoom span { color:var(--muted); font-size:11px; min-width:36px; text-align:center; }
   g.node { cursor:pointer; }
-  g.node.sel rect, g.node.sel polygon { stroke-width:3px !important; }
 </style></head>
 <body>
 <div id="viewport">
@@ -108,6 +101,7 @@ object Page {
     <button id="z-fit" title="Fit to the window">Fit</button>
   </div>
   <div id="stage"><pre class="mermaid">__DIAGRAM__</pre></div>
+  <div id="loading"><i></i>drawing the map…</div>
 </div>
 <script src="mermaid.min.js"></script>
 <script>
@@ -116,8 +110,8 @@ object Page {
   // script did not load, and the page would otherwise show the diagram source as text
   // with no explanation.
   if (typeof mermaid === "undefined") {
-    document.getElementById("stage").innerHTML =
-      "<p style='padding:16px'>mermaid.min.js did not load, so the diagram cannot be drawn.</p>";
+    document.getElementById("loading").textContent =
+      "mermaid.min.js did not load, so the diagram cannot be drawn.";
   } else {
     mermaid.initialize({ startOnLoad:false, theme:"base", flowchart:{ curve:"basis" },
       themeVariables:{ fontFamily:"ui-sans-serif, system-ui, sans-serif", fontSize:"13px",
@@ -137,10 +131,11 @@ object Page {
     stage.style.transform = "translate("+tx+"px,"+ty+"px) scale("+scale+")";
     pct.textContent = Math.round(scale*100) + "%";
   }
-  function zoomAt(px, py, factor) {
-    var next = Math.max(0.1, Math.min(6, scale*factor));
+  function scaleAt(px, py, next) {
+    next = Math.max(0.1, Math.min(6, next));
     tx = px - (px-tx)*(next/scale); ty = py - (py-ty)*(next/scale); scale = next; apply();
   }
+  function zoomAt(px, py, factor) { scaleAt(px, py, scale*factor); }
   function fit() {
     var svg = stage.querySelector("svg"); if (!svg) return;
     var b = svg.getBoundingClientRect(), w = b.width/scale, h = b.height/scale;
@@ -155,26 +150,48 @@ object Page {
   };
   document.getElementById("z-fit").onclick = fit;
 
+  // The viewport never scrolls, so a plain wheel zooms rather than doing nothing.
   vp.addEventListener("wheel", function (e) {
-    if (!e.ctrlKey && !e.metaKey) return; e.preventDefault();
+    e.preventDefault();
     var r = vp.getBoundingClientRect();
-    zoomAt(e.clientX-r.left, e.clientY-r.top, e.deltaY < 0 ? 1.1 : 1/1.1);
+    var step = e.ctrlKey || e.metaKey ? 1.15 : 1.08;   // a pinch moves further per notch
+    zoomAt(e.clientX-r.left, e.clientY-r.top, e.deltaY < 0 ? step : 1/step);
   }, { passive:false });
 
   // Panning must not capture the pointer on the way down. While a pointer is captured
   // the browser retargets the click to the capturing element, so a box would never
   // receive its own click and nothing would open. Capture starts only once the pointer
   // has travelled far enough to be a drag rather than a click.
-  var DRAG_THRESHOLD = 4;
+  var DRAG_THRESHOLD = 4, DOUBLE_MS = 350, DOUBLE_SLOP = 8;
   var drag = false, captured = false, ox = 0, oy = 0, moved = false, sx = 0, sy = 0, pid = null;
+  var zooming = false, anchorX = 0, anchorY = 0, startScale = 1;
+  var lastUp = 0, lastUpX = 0, lastUpY = 0;
 
   vp.addEventListener("pointerdown", function (e) {
     if (e.target.closest("#zoom")) return;
     drag = true; moved = false; captured = false; pid = e.pointerId;
     sx = e.clientX; sy = e.clientY; ox = e.clientX-tx; oy = e.clientY-ty;
+
+    // A second press soon after the first, in the same place, drags the zoom instead of
+    // the diagram: up zooms in, down zooms out, about the point pressed.
+    zooming = (Date.now() - lastUp) < DOUBLE_MS &&
+              Math.abs(e.clientX-lastUpX) + Math.abs(e.clientY-lastUpY) < DOUBLE_SLOP;
+    if (zooming) {
+      var r = vp.getBoundingClientRect();
+      anchorX = e.clientX-r.left; anchorY = e.clientY-r.top; startScale = scale;
+      moved = true;                    // the press belongs to the gesture, not to a box
+    }
   });
   vp.addEventListener("pointermove", function (e) {
     if (!drag) return;
+    if (zooming) {
+      if (!captured) {
+        captured = true;
+        try { vp.setPointerCapture(pid); } catch (err) { /* capture is optional */ }
+      }
+      scaleAt(anchorX, anchorY, startScale * Math.pow(1.006, sy - e.clientY));
+      return;
+    }
     if (!moved && Math.abs(e.clientX-sx) + Math.abs(e.clientY-sy) < DRAG_THRESHOLD) return;
     if (!captured) {
       captured = true; moved = true; vp.classList.add("drag");
@@ -185,22 +202,19 @@ object Page {
   ["pointerup","pointercancel"].forEach(function (n) {
     vp.addEventListener(n, function (e) {
       if (captured) { try { vp.releasePointerCapture(pid); } catch (err) {} }
-      drag = false; captured = false; vp.classList.remove("drag");
+      lastUp = Date.now(); lastUpX = e.clientX; lastUpY = e.clientY;
+      drag = false; captured = false; zooming = false; vp.classList.remove("drag");
       // A drag ends here, and the click that follows it must not open a file. The flag
       // is cleared after the click has been dispatched.
       setTimeout(function () { moved = false; }, 0);
     });
   });
 
-  // Two ways back to the plugin, because one of them may not be installed: a function
-  // the plugin injects, and a navigation the plugin intercepts. Whichever exists runs.
-  function openInIde(node) {
-    if (!node || !node.path) return;
-    var payload = JSON.stringify({ path: node.path, line: node.line, changed: !!node.changed });
-    if (window.openInIde && window.openInIde !== openInIde) {
-      try { window.openInIde(payload); return; } catch (e) { /* fall through */ }
-    }
-    window.location.href = "prmap://open?payload=" + encodeURIComponent(payload);
+  // The plugin installs window.openInIde once the page has loaded.
+  function open(node) {
+    if (!node || !node.path || !window.openInIde) return;
+    window.openInIde(JSON.stringify(
+      { path: node.path, line: node.line, changed: !!node.changed }));
   }
 
   function nodeId(g) {
@@ -218,8 +232,7 @@ object Page {
     if (!svg && tries++ < 200) return;
     clearInterval(timer);
     if (!svg) {
-      // The stage carries the failure, because the page has no status line of its own.
-      stage.innerHTML = "<p style='padding:16px'>the diagram failed to draw</p>";
+      document.getElementById("loading").textContent = "the diagram failed to draw";
       return;
     }
     svg.style.maxWidth = "none";
@@ -233,10 +246,12 @@ object Page {
         g.classList.add("sel");
         var node = (window.DETAIL || {})[id];
         if (!node) return;              // nothing recorded for this box
-        openInIde(node);
+        open(node);
       });
     });
     fit();
+    document.getElementById("loading").classList.add("gone");
+    stage.classList.add("ready");
   }, 60);
 })();
 </script>
